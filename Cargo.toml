@@ -1,0 +1,10 @@
+[package]
+name = "status"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+libc = "0.2.191"
+nvml-wrapper = "0.13.0"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+ureq = "3.4.2"
