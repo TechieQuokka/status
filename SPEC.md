@@ -1,6 +1,6 @@
 # status — Specification
 
-Version: 1.0.0
+Version: 1.1.0
 
 A Rust CLI that prints the **current** state of this machine. Every command
 takes a one-shot snapshot and exits; nothing refreshes continuously.
@@ -21,8 +21,10 @@ Vendor-specific implementations are acceptable.
 - Sizes are shown in decimal GB. Rates are shown in MB/s.
 - `--json` prints the same data as JSON instead of text.
 - Color is used only when stdout is a terminal (and `NO_COLOR` is unset).
-- If a value needs root and the user is not root, the value is shown as
-  `requires root (sudo status ...)`; everything else is still shown.
+- Privileged values are read through file capabilities granted by
+  `install.sh` (`cap_sys_rawio`, `cap_dac_read_search`, `cap_sys_ptrace`), so
+  no sudo is needed. If a read is actually denied, the value is shown as
+  `requires permission (run install.sh)`; everything else is still shown.
 - If a sensor does not exist, the value is shown as `not available`.
 
 ## Help
@@ -52,7 +54,7 @@ Disk 1 is the physical disk that holds `/`. Other disks follow by device name.
 | `status disk <n>` | Capacity: size, used, free, root-reserved, held open by deleted files (with process names) |
 | `status disk <n> --scan` | Above plus preallocated-but-unwritten space (walks the filesystems) |
 | `status disk <n> partition` | Per-partition filesystem, mount point, size, used, free |
-| `status disk <n> smart` | Health, temperature, power-on hours, wear, data written (root) |
+| `status disk <n> smart` | Health, temperature, power-on hours, wear, data written |
 | `status disk <n> io` | Current read/write rate and IOPS |
 | `status disk help` | Help |
 
@@ -67,7 +69,7 @@ Disk 1 is the physical disk that holds `/`. Other disks follow by device name.
 | `status cpu info` | Model, cores/threads, base/max clock, cache |
 | `status cpu fan` | Fan speeds (RPM) if any sensor exposes them |
 | `status cpu process` | Top processes by CPU usage |
-| `status cpu power` | Package power (W) via Intel RAPL (root) |
+| `status cpu power` | Package power (W) via Intel RAPL |
 | `status cpu help` | Help |
 
 ### status memory
@@ -79,7 +81,7 @@ Disk 1 is the physical disk that holds `/`. Other disks follow by device name.
 | `status memory swap` | Swap total/used/free, per device or file |
 | `status memory cache` | Buffers, page cache, shared, reclaimable |
 | `status memory process` | Top processes by resident memory |
-| `status memory info` | RAM modules: slot, size, type, speed (root) |
+| `status memory info` | RAM modules: slot, size, type, speed |
 | `status memory help` | Help |
 
 ### status network

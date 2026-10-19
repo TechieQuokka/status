@@ -259,8 +259,8 @@ fn held_open(devnos: &HashSet<u64>) -> Held {
     for pid in util::pids() {
         let entries = match fs::read_dir(format!("/proc/{pid}/fd")) {
             Ok(e) => e,
-            Err(_) => {
-                partial = true;
+            Err(e) => {
+                partial |= util::is_denied(&e);
                 continue;
             }
         };
@@ -283,7 +283,7 @@ fn held_open(devnos: &HashSet<u64>) -> Held {
     }
     let mut by_process: Vec<(String, u64)> = by_process.into_iter().filter(|(_, b)| *b > 0).collect();
     by_process.sort_by_key(|p| std::cmp::Reverse(p.1));
-    Held { total, by_process, partial: partial && !util::is_root() }
+    Held { total, by_process, partial }
 }
 
 #[repr(C)]
@@ -315,11 +315,11 @@ const FIEMAP_EXTENT_LAST: u32 = 0x1;
 const FIEMAP_EXTENT_UNWRITTEN: u32 = 0x800;
 
 /// Bytes of a file that are allocated but never written (preallocated).
-fn unwritten(path: &Path) -> Option<u64> {
-    let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).ok()?;
+fn unwritten(path: &Path) -> std::io::Result<u64> {
+    let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
     let fd = unsafe { libc::open(c.as_ptr(), libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC) };
     if fd < 0 {
-        return None;
+        return Err(std::io::Error::last_os_error());
     }
     let mut map: Box<Fiemap> = Box::new(unsafe { std::mem::zeroed() });
     let (mut start, mut sum) = (0u64, 0u64);
@@ -330,10 +330,10 @@ fn unwritten(path: &Path) -> Option<u64> {
         map.count = EXTENTS as u32;
         map.mapped = 0;
         if unsafe { libc::ioctl(fd, FS_IOC_FIEMAP as _, &mut *map as *mut Fiemap) } != 0 {
-            break None;
+            break Err(std::io::Error::last_os_error());
         }
         if map.mapped == 0 {
-            break Some(sum);
+            break Ok(sum);
         }
         let ext = &map.extents[..map.mapped as usize];
         for e in ext {
@@ -343,7 +343,7 @@ fn unwritten(path: &Path) -> Option<u64> {
         }
         let last = ext[ext.len() - 1];
         if last.flags & FIEMAP_EXTENT_LAST != 0 {
-            break Some(sum);
+            break Ok(sum);
         }
         start = last.logical + last.length;
     };
@@ -354,16 +354,19 @@ fn unwritten(path: &Path) -> Option<u64> {
 struct Scan {
     bytes: u64,
     files: u64,
-    skipped: u64,
+    denied: u64,
 }
 
 /// Walks a filesystem without crossing into other devices and sums unwritten extents.
 fn scan_preallocated(root: &str, devno: u64, scan: &mut Scan) {
     let mut stack = vec![PathBuf::from(root)];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            scan.skipped += 1;
-            continue;
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(e) => {
+                scan.denied += u64::from(util::is_denied(&e));
+                continue;
+            }
         };
         for e in entries.flatten() {
             let Ok(meta) = fs::symlink_metadata(e.path()) else { continue };
@@ -374,12 +377,13 @@ fn scan_preallocated(root: &str, devno: u64, scan: &mut Scan) {
             if ft.is_dir() {
                 stack.push(e.path());
             } else if ft.is_file() && meta.blocks() > 0 && !ft.is_fifo() {
+                // Filesystems without FIEMAP (e.g. vfat) simply contribute nothing.
                 match unwritten(&e.path()) {
-                    Some(b) => {
+                    Ok(b) => {
                         scan.bytes += b;
                         scan.files += u64::from(b > 0);
                     }
-                    None => scan.skipped += 1,
+                    Err(e) => scan.denied += u64::from(util::is_denied(&e)),
                 }
             }
         }
@@ -415,7 +419,7 @@ fn capacity(d: &Disk, index: usize, scan: bool) -> Result<Output> {
         held_text += &format!("   {}", top.join(", "));
     }
     if held.partial {
-        held_text += &format!("   {}", dim(&format!("own processes only; {}", util::root_hint())));
+        held_text += &format!("   {}", dim(&format!("own processes only; {}", util::permission_hint())));
     }
     t.kv("Held open", held_text);
     j["held_open"] = json!({
@@ -425,20 +429,19 @@ fn capacity(d: &Disk, index: usize, scan: bool) -> Result<Output> {
     });
 
     if scan {
-        let mut s = Scan { bytes: 0, files: 0, skipped: 0 };
+        let mut s = Scan { bytes: 0, files: 0, denied: 0 };
         for m in &fs_mounts {
             scan_preallocated(&m.point, m.devno, &mut s);
         }
         let mut text = format!("{}   {}", gb(s.bytes), dim(&format!("{} files", util::thousands(s.files))));
-        if s.skipped > 0 {
+        if s.denied > 0 {
             text += &format!(
                 "   {}",
-                dim(&format!("{} unreadable skipped{}", util::thousands(s.skipped),
-                    if util::is_root() { String::new() } else { format!("; {}", util::root_hint()) }))
+                dim(&format!("{} unreadable skipped; {}", util::thousands(s.denied), util::permission_hint()))
             );
         }
         t.kv("Preallocated", text);
-        j["preallocated"] = json!({ "total": s.bytes, "files": s.files, "skipped": s.skipped });
+        j["preallocated"] = json!({ "total": s.bytes, "files": s.files, "denied": s.denied });
     }
     Ok(t.finish(j))
 }

@@ -41,7 +41,7 @@ pub fn group(name: &str) -> Output {
   status disk <n>                Capacity: size, used, free, reserved, held open
   status disk <n> --scan         Capacity plus preallocated (unwritten) space
   status disk <n> partition      Per-partition usage and mount points
-  status disk <n> smart          Health, temperature, wear, data written (root)
+  status disk <n> smart          Health, temperature, wear, data written
   status disk <n> io             Current read/write rate and IOPS",
             "  Disk 1 is always the disk that holds '/'. Others follow by device name.
   Omitting <n> means disk 1, e.g. 'status disk smart' = 'status disk 1 smart'.
@@ -49,7 +49,7 @@ pub fn group(name: &str) -> Output {
   '--scan' walks every file on the disk's filesystems and can take a while.",
             "  status disk list
   status disk 2 partition
-  sudo status disk 1 --scan",
+  status disk 1 --scan",
         ),
         "cpu" => (
             "status cpu — processor",
@@ -60,11 +60,11 @@ pub fn group(name: &str) -> Output {
   status cpu info                Model, cores/threads, clocks, cache
   status cpu fan                 Fan speeds (RPM), if a sensor exposes them
   status cpu process             Top processes by CPU usage
-  status cpu power               Package power (W) via Intel RAPL (root)",
+  status cpu power               Package power (W) via Intel RAPL",
             "  Usage and power are measured over 0.5 s and printed once.
   Process usage is per core: 100% means one full core.",
             "  status cpu core
-  sudo status cpu power",
+  status cpu power",
         ),
         "memory" => (
             "status memory — RAM and swap",
@@ -73,11 +73,11 @@ pub fn group(name: &str) -> Output {
   status memory swap             Swap total/used/free per device or file
   status memory cache            Buffers, page cache, shared, reclaimable
   status memory process          Top processes by resident memory
-  status memory info             RAM modules: slot, size, type, speed (root)",
+  status memory info             RAM modules: slot, size, type, speed",
             "  'Available' is what apps can still get: free memory plus cache the
   kernel can drop. It is a better measure than 'free'.",
             "  status memory
-  sudo status memory info",
+  status memory info",
         ),
         "network" => (
             "status network — network interfaces",

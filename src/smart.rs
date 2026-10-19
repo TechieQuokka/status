@@ -94,7 +94,8 @@ impl Device {
         if unsafe { libc::ioctl(self.0, SG_IO as _, &mut hdr as *mut SgIoHdr) } != 0 {
             return Err(std::io::Error::last_os_error().into());
         }
-        if hdr.host_status != 0 || (hdr.driver_status & 0x0F) > 1 {
+        // DRIVER_SENSE (0x08) is expected: CK_COND returns the registers as sense data.
+        if hdr.host_status != 0 || !matches!(hdr.driver_status & 0x0F, 0 | 1 | 8) {
             return Err(Error::Unavailable("device rejected ATA pass-through".into()));
         }
         Ok(sense)

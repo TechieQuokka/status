@@ -17,7 +17,6 @@ const GROUPS: [&str; 6] = ["disk", "cpu", "memory", "network", "gpu", "system"];
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    util::set_command(&args);
 
     let mut json = false;
     let mut scan = false;

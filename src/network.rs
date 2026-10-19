@@ -267,11 +267,19 @@ fn wifi(ifaces: &[Interface]) -> Result<Output> {
     Ok(t.finish(json!({ "interface": f.name, "ssid": ssid, "frequency_mhz": freq, "signal": signal })))
 }
 
-/// Maps socket inodes to the owning (pid, name).
-fn socket_owners() -> HashMap<u64, (u32, String)> {
+/// Maps socket inodes to the owning (pid, name); the flag is set when some
+/// processes could not be inspected for lack of permission.
+fn socket_owners() -> (HashMap<u64, (u32, String)>, bool) {
     let mut out = HashMap::new();
+    let mut partial = false;
     for pid in util::pids() {
-        let Ok(entries) = fs::read_dir(format!("/proc/{pid}/fd")) else { continue };
+        let entries = match fs::read_dir(format!("/proc/{pid}/fd")) {
+            Ok(e) => e,
+            Err(e) => {
+                partial |= util::is_denied(&e);
+                continue;
+            }
+        };
         for e in entries.flatten() {
             let Ok(target) = fs::read_link(e.path()) else { continue };
             let t = target.to_string_lossy();
@@ -281,7 +289,7 @@ fn socket_owners() -> HashMap<u64, (u32, String)> {
                 }
         }
     }
-    out
+    (out, partial)
 }
 
 /// Decodes "0100007F:0035" (IPv4) or a 32-digit IPv6 form from /proc/net.
@@ -325,7 +333,7 @@ fn tcp_state(code: &str) -> &'static str {
 }
 
 fn connection() -> Result<Output> {
-    let owners = socket_owners();
+    let (owners, partial) = socket_owners();
     let mut conns = Vec::new();
     for proto in ["tcp", "tcp6", "udp", "udp6"] {
         let Ok(content) = fs::read_to_string(format!("/proc/net/{proto}")) else { continue };
@@ -365,8 +373,8 @@ fn connection() -> Result<Output> {
         .collect();
     let mut t = Text::new();
     t.table(&["Proto", "Local", "Remote", "State", "Process"], &rows);
-    if !util::is_root() {
-        t.line(&dim(&format!("Other users' processes are hidden; {}", util::root_hint())));
+    if partial {
+        t.line(&dim(&format!("Other users' processes are hidden; {}", util::permission_hint())));
     }
     let list: Vec<_> = conns
         .iter()

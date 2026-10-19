@@ -43,7 +43,7 @@ pub fn init() -> Result<Nvml> {
 
 fn nvml_error(e: nvml_wrapper::error::NvmlError) -> Error {
     match e {
-        nvml_wrapper::error::NvmlError::NoPermission => Error::Root,
+        nvml_wrapper::error::NvmlError::NoPermission => Error::Permission,
         e => Error::Failed(format!("NVML: {e}")),
     }
 }

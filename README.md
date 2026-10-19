@@ -21,8 +21,12 @@ may work partially; values that cannot be read show `not available`.
 Requires Rust 1.85+ (edition 2024).
 
 ```sh
-cargo install --path .
+./install.sh
 ```
+
+This runs `cargo install --path . --force` and then grants the binary the
+capabilities it needs (asks for the sudo password once). See
+[Permissions](#permissions). Re-run it after every rebuild.
 
 The NVIDIA proprietary driver is needed for `status gpu` (NVML is loaded at
 runtime; everything else works without it).
@@ -86,18 +90,24 @@ Color is used only when stdout is a terminal and `NO_COLOR` is unset.
 - **Preallocated** (`--scan`) — space reserved with `fallocate` but never
   written, found via `FIEMAP` unwritten extents.
 
-### Root
+### Permissions
 
-Some values need root: `disk smart`, `cpu power`, `memory info`, and the full
-view of `disk` held-open space and `network connection` owners. Without root
-they show `requires root (sudo status ...)` and everything else is still shown.
+Some values normally need root: `disk smart`, `cpu power`, `memory info`, and
+the full view of `disk` held-open space and `network connection` owners.
+Instead of sudo, `install.sh` grants the binary three file capabilities:
 
-`cargo install` puts the binary in `~/.cargo/bin`, which is usually not in
-root's `PATH`, so call it by full path:
+| Capability | Used for |
+|---|---|
+| `cap_sys_rawio` | SMART via ATA pass-through |
+| `cap_dac_read_search` | Root-only files: RAPL energy, SMBIOS table, `/dev/sdX` |
+| `cap_sys_ptrace` | Other users' `/proc/<pid>/fd` (held open, connections) |
 
-```sh
-sudo "$(which status)" disk smart
-```
+With them, every command works as a normal user. Without them (e.g. after a
+plain `cargo install`), those values show `requires permission (run
+install.sh)` and everything else is still shown.
+
+Replacing the binary drops its capabilities, so re-run `./install.sh` after
+every rebuild. Check them with `getcap ~/.cargo/bin/status`.
 
 ## How it works
 

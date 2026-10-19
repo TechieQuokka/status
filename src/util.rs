@@ -3,7 +3,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Interval used for values that are derived from two readings.
@@ -12,7 +11,7 @@ pub const SAMPLE: Duration = Duration::from_millis(500);
 pub enum Error {
     Usage(String),
     Unavailable(String),
-    Root,
+    Permission,
     Failed(String),
 }
 
@@ -23,7 +22,7 @@ impl fmt::Display for Error {
         match self {
             Error::Usage(m) | Error::Failed(m) => write!(f, "{m}"),
             Error::Unavailable(m) => write!(f, "not available ({m})"),
-            Error::Root => write!(f, "{}", root_hint()),
+            Error::Permission => write!(f, "{}", permission_hint()),
         }
     }
 }
@@ -31,7 +30,7 @@ impl fmt::Display for Error {
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         match e.kind() {
-            io::ErrorKind::PermissionDenied => Error::Root,
+            io::ErrorKind::PermissionDenied => Error::Permission,
             _ => Error::Failed(e.to_string()),
         }
     }
@@ -41,26 +40,13 @@ pub fn usage(group: &str, msg: impl fmt::Display) -> Error {
     Error::Usage(format!("{msg}. Run 'status {group} help'."))
 }
 
-static COMMAND: OnceLock<String> = OnceLock::new();
-
-pub fn set_command(args: &[String]) {
-    let _ = COMMAND.set(
-        std::iter::once("status".to_string())
-            .chain(args.iter().cloned())
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
+/// Shown when the binary lacks the capabilities granted by install.sh.
+pub fn permission_hint() -> String {
+    "requires permission (run install.sh)".into()
 }
 
-pub fn root_hint() -> String {
-    format!(
-        "requires root (sudo {})",
-        COMMAND.get().map(String::as_str).unwrap_or("status")
-    )
-}
-
-pub fn is_root() -> bool {
-    unsafe { libc::geteuid() == 0 }
+pub fn is_denied(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::PermissionDenied
 }
 
 pub fn read(path: impl AsRef<Path>) -> Option<String> {
